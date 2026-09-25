@@ -39,9 +39,11 @@ def fetch_news_score(stock_name):
         return ["뉴스 데이터를 가져오는 중 오류가 발생했습니다."], 0
 
 def fetch_chart_data(ticker_symbol):
-    """yfinance를 통해 실시간 차트 지표 계산"""
+    """yfinance를 통해 실시간 차트 지표 계산 (안정성 강화 버전)"""
     try:
-        df = yf.download(ticker_symbol, period="6mo", progress=False)
+        ticker_obj = yf.Ticker(ticker_symbol)
+        df = ticker_obj.history(period="6mo")
+        
         if df.empty:
             return None
         
@@ -60,9 +62,9 @@ def fetch_chart_data(ticker_symbol):
             "price": float(latest['Close']),
             "ma20": float(latest['MA20']),
             "rsi": float(latest['RSI']),
-            "df": df  # 차트용 데이터
+            "df": df
         }
-    except Exception:
+    except Exception as e:
         return None
 
 # 3. 화면 상단 타이틀
@@ -82,11 +84,11 @@ st.markdown("---")
 # 5. 분석 시작 버튼 동작
 if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
     with st.spinner("최신 뉴스 및 차트 데이터를 수집 중입니다..."):
-        chart_data = fetch_chart_data(ticker)
+        chart_data = fetch_chart_data(ticker.strip().upper())
         news_titles, news_score = fetch_news_score(stock_name)
     
     if chart_data is None:
-        st.error("❌ 주가 데이터를 불러올 수 없습니다. 종목 티커를 확인해 주세요.")
+        st.error("❌ 주가 데이터를 불러올 수 없습니다. 종목 티커를 확인해 주세요. (예: 삼성전자 -> 005930.KS, 애플 -> AAPL)")
     else:
         st.subheader(f"📊 [{stock_name}] MSM 정밀 분석 결과")
         
@@ -126,7 +128,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         elif price < ma20:
             st.info("📉 **[종합 시그널: 관망 구간]** 주가가 20일 이동평균선 밑에 위치해 있어 하방 지지선을 확인할 필요가 있습니다.")
         else:
-            st.secondary("➡️ **[종합 시그널: 중립]** 명확한 방향성이 나타날 때까지 관찰이 필요한 구간입니다.")
+            st.warning("➡️ **[종합 시그널: 중립]** 명확한 방향성이 나타날 때까지 관찰이 필요한 구간입니다.")
             
         # 차트 그래프 간단 표시
         with st.expander("📈 주가 및 20일선 추이 차트 보기"):
