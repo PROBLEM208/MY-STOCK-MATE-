@@ -3,6 +3,7 @@ import yfinance as yf
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
+import urllib.parse
 
 # 1. 페이지 기본 설정
 st.set_page_config(
@@ -13,17 +14,24 @@ st.set_page_config(
 
 # 2. 실시간 데이터 처리 함수들
 def fetch_news_score(stock_name):
-    """네이버 뉴스에서 기사 헤드라인을 가져와 분석"""
-    url = f"https://search.naver.com/search.naver?where=news&query={stock_name}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
+    """구글 뉴스 RSS 피드를 이용해 차단 없이 최신 뉴스 가져오기"""
     try:
-        response = requests.get(url, headers=headers, timeout=5)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        titles = [a['title'] for a in soup.select('a.news_tit')]
+        # 검색어 URL 엔코딩
+        encoded_query = urllib.parse.quote(f"{stock_name} 주식")
+        url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
         
-        pos_keywords = ['상승', '호재', '실적', '흑자', '수주', '돌파', '신고가', '매수']
-        neg_keywords = ['하락', '악재', '적자', '급락', '위기', '손실', '우려', '매도']
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+        response = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(response.text, 'xml')
+        
+        items = soup.find_all('item')
+        titles = [item.title.text for item in items[:5] if item.title]
+        
+        if not titles:
+            return ["최근 관련 뉴스를 찾을 수 없습니다."], 0
+        
+        pos_keywords = ['상승', '호재', '실적', '흑자', '수주', '돌파', '신고가', '매수', '급등', '목표가 상향']
+        neg_keywords = ['하락', '악재', '적자', '급락', '위기', '손실', '우려', '매도', '우려', '목표가 하향']
         reverse_words = ['멈춰', '극복', '탈출', '반등', '해소']
         
         score = 0
@@ -34,12 +42,12 @@ def fetch_news_score(stock_name):
             for nk in neg_keywords:
                 if nk in title and not has_reverse: score -= 1.5
                 
-        return titles[:5], score
+        return titles, score
     except Exception:
-        return ["뉴스 데이터를 가져오는 중 오류가 발생했습니다."], 0
+        return ["뉴스 데이터를 불러오는 중 오류가 발생했습니다."], 0
 
 def fetch_chart_data(ticker_symbol):
-    """yfinance를 통해 실시간 차트 지표 계산 (안정성 강화 버전)"""
+    """yfinance를 통해 실시간 차트 지표 계산"""
     try:
         ticker_obj = yf.Ticker(ticker_symbol)
         df = ticker_obj.history(period="6mo")
@@ -64,7 +72,7 @@ def fetch_chart_data(ticker_symbol):
             "rsi": float(latest['RSI']),
             "df": df
         }
-    except Exception as e:
+    except Exception:
         return None
 
 # 3. 화면 상단 타이틀
@@ -85,7 +93,7 @@ st.markdown("---")
 if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
     with st.spinner("최신 뉴스 및 차트 데이터를 수집 중입니다..."):
         chart_data = fetch_chart_data(ticker.strip().upper())
-        news_titles, news_score = fetch_news_score(stock_name)
+        news_titles, news_score = fetch_news_score(stock_name.strip())
     
     if chart_data is None:
         st.error("❌ 주가 데이터를 불러올 수 없습니다. 종목 티커를 확인해 주세요. (예: 삼성전자 -> 005930.KS, 애플 -> AAPL)")
@@ -130,7 +138,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         else:
             st.warning("➡️ **[종합 시그널: 중립]** 명확한 방향성이 나타날 때까지 관찰이 필요한 구간입니다.")
             
-        # 차트 그래프 간단 표시
+        # 차트 그래프 표시
         with st.expander("📈 주가 및 20일선 추이 차트 보기"):
             st.line_chart(chart_data['df'][['Close', 'MA20']])
             
