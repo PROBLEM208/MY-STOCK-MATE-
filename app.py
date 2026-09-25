@@ -6,11 +6,11 @@ import pandas as pd
 import urllib.parse
 import plotly.graph_objects as go
 
-# 1. 페이지 기본 설정
+# 1. 페이지 기본 설정 (layout="wide"로 넓게 변경)
 st.set_page_config(
     page_title="MY STOCK MATE (MSM)",
     page_icon="📈",
-    layout="centered"
+    layout="wide"
 )
 
 # --- 기능 1: 실시간 환율 수집 (USD/KRW) ---
@@ -30,7 +30,6 @@ def search_ticker(query):
     """기업 이름을 기반으로 한국/미국 주식 티커 자동 검색"""
     query_clean = query.strip()
     
-    # 한국 대표 종목 매핑 사전
     kr_presets = {
         "삼성전자": "005930.KS", "SK하이닉스": "000660.KS", "LG에너지솔루션": "373220.KS",
         "현대차": "005380.KS", "NAVER": "035420.KS", "네이버": "035420.KS",
@@ -39,7 +38,6 @@ def search_ticker(query):
     if query_clean in kr_presets:
         return kr_presets[query_clean]
         
-    # 야후 파이낸스 자동 검색 API 활용
     try:
         url = f"https://query2.finance.yahoo.com/v1/finance/search?q={urllib.parse.quote(query_clean)}&quotesCount=5"
         headers = {'User-Agent': 'Mozilla/5.0'}
@@ -52,7 +50,7 @@ def search_ticker(query):
         
     return None
 
-# --- 뉴스 수집 및 감성 분석 (링크 포함) ---
+# --- 뉴스 수집 및 감성 분석 ---
 def fetch_news_score(stock_name):
     """구글 뉴스 RSS 피드를 이용한 최신 뉴스 및 링크 가져오기"""
     try:
@@ -93,7 +91,7 @@ def fetch_news_score(stock_name):
     except Exception:
         return [{"title": "뉴스 데이터를 불러오는 중 오류가 발생했습니다.", "link": "#"}], 0
 
-# --- 기능 3: 거래량 분석 및 차트 데이터 계산 ---
+# --- 거래량 분석 및 차트 데이터 계산 ---
 def fetch_chart_data(ticker_symbol):
     """yfinance를 통한 차트 지표 및 거래량 계산"""
     try:
@@ -103,17 +101,14 @@ def fetch_chart_data(ticker_symbol):
         if df.empty:
             return None
         
-        # 20일 이동평균선
         df['MA20'] = df['Close'].rolling(window=20).mean()
         
-        # RSI (14일)
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
         
-        # 거래량 분석 (최근 5일 평균 대비 당일 거래량 비율)
         df['Vol_MA5'] = df['Volume'].rolling(window=5).mean()
         latest = df.iloc[-1]
         
@@ -134,19 +129,15 @@ st.title("📈 MY STOCK MATE (MSM)")
 st.caption("내 손안의 스마트 AI 주식 분석 비서")
 st.divider()
 
-# 사용자 입력창
 stock_input = st.text_input("🏢 기업 이름 또는 종목 티커 입력", value="삼성전자", help="예: 삼성전자, 애플, AAPL, Tesla 등")
 
 st.markdown("---")
 
-# 세션 상태 초기화
 if "analyzed" not in st.session_state:
     st.session_state.analyzed = False
 
-# 분석 시작 버튼
 if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
     with st.spinner("티커 검색, 실시간 시세, 뉴스 및 거래량을 분석 중입니다..."):
-        # 1. 티커 검색
         found_ticker = search_ticker(stock_input)
         if not found_ticker:
             found_ticker = stock_input.strip().upper()
@@ -165,7 +156,6 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
             st.session_state.stock_name = stock_input
             st.session_state.ticker = found_ticker
 
-# 분석 결과 출력
 if st.session_state.get("analyzed", False):
     chart_data = st.session_state.chart_data
     news_list = st.session_state.news_list
@@ -180,7 +170,6 @@ if st.session_state.get("analyzed", False):
     rsi = chart_data['rsi']
     vol_ratio = chart_data['vol_ratio']
     
-    # 한국 / 미국 주식 구분 및 환율 계산
     is_kor = curr_ticker.endswith(".KS") or curr_ticker.endswith(".KQ")
     exchange_rate = get_exchange_rate()
     
@@ -192,7 +181,6 @@ if st.session_state.get("analyzed", False):
         price_display = f"${price:,.2f} (약 {price_krw:,.0f}원)"
         ma20_display = f"20일선: ${ma20:,.2f}"
     
-    # 뉴스 점수 텍스트 변환
     if news_score > 0:
         news_text = f"긍정 우세 (+{news_score:.1f})"
         news_delta = "호재 기사 우세"
@@ -203,14 +191,13 @@ if st.session_state.get("analyzed", False):
         news_text = "중립 (0.0)"
         news_delta = "특이 기사 없음"
         
-    # 거래량 텍스트 변환
     vol_delta = f"평균 대비 {vol_ratio:.0f}%"
     if vol_ratio >= 150:
-        vol_status = "🔥 거래량 급증"
+        vol_status = "🔥 급증"
     elif vol_ratio <= 50:
-        vol_status = "🧊 거래량 소외"
+        vol_status = "🧊 소외"
     else:
-        vol_status = "➡️ 평이한 수준"
+        vol_status = "➡️ 보통"
 
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("현재가", price_display, ma20_display)
@@ -220,7 +207,6 @@ if st.session_state.get("analyzed", False):
     
     st.markdown("---")
     
-    # 시그널 판정
     if news_score > 0 and price > ma20 and rsi < 70 and vol_ratio >= 130:
         st.success("🔥 **[종합 시그널: 강력 매수 관점]** 호재 뉴스, 20일선 수복, 거래량 급증이 동시 발생하여 상승 동력이 매우 강합니다!")
     elif news_score > 0 and price > ma20 and rsi < 70:
@@ -232,7 +218,6 @@ if st.session_state.get("analyzed", False):
     else:
         st.warning("➡️ **[종합 시그널: 중립]** 방향성을 탐색 중인 구간입니다.")
         
-    # 차트 설정 및 출력
     st.markdown("### 📈 주가 차트 설정")
     show_chart = st.toggle("차트 화면 표시하기", value=True)
     
@@ -269,7 +254,6 @@ if st.session_state.get("analyzed", False):
         
         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
         
-    # 뉴스 클릭 링크 적용 부분
     with st.expander("📰 분석에 반영된 최근 뉴스 보기 (클릭 시 기사로 이동)", expanded=True):
         for i, item in enumerate(news_list, 1):
             if item['link'] != "#":
