@@ -4,6 +4,7 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import urllib.parse
+import plotly.graph_objects as go
 
 # 1. 페이지 기본 설정
 st.set_page_config(
@@ -16,7 +17,6 @@ st.set_page_config(
 def fetch_news_score(stock_name):
     """구글 뉴스 RSS 피드를 이용해 차단 없이 최신 뉴스 가져오기"""
     try:
-        # 검색어 URL 엔코딩
         encoded_query = urllib.parse.quote(f"{stock_name} 주식")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
         
@@ -96,7 +96,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         news_titles, news_score = fetch_news_score(stock_name.strip())
     
     if chart_data is None:
-        st.error("❌ 주가 데이터를 불러올 수 없습니다. 종목 티커를 확인해 주세요. (예: 삼성전자 -> 005930.KS, 애플 -> AAPL)")
+        st.error("❌ 주가 데이터를 불러올 수 없습니다. 종목 티커를 확인해 주세요.")
     else:
         st.subheader(f"📊 [{stock_name}] MSM 정밀 분석 결과")
         
@@ -118,7 +118,6 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         # 메트릭 카드 배치
         m1, m2, m3 = st.columns(3)
         
-        # 한국 주가와 해외 주가 단주 단위 표기 구분
         is_kor = ticker.endswith(".KS") or ticker.endswith(".KQ")
         price_str = f"{price:,.0f}원" if is_kor else f"${price:,.2f}"
         
@@ -138,9 +137,58 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         else:
             st.warning("➡️ **[종합 시그널: 중립]** 명확한 방향성이 나타날 때까지 관찰이 필요한 구간입니다.")
             
-        # 차트 그래프 표시
-        with st.expander("📈 주가 및 20일선 추이 차트 보기"):
-            st.line_chart(chart_data['df'][['Close', 'MA20']])
+        # 6. 차트 유형 선택 및 대화형 그래프 표시 (새 기능 추가!)
+        with st.expander("📈 주가 차트 보기 및 유형 선택", expanded=True):
+            chart_type = st.radio(
+                "차트 유형을 선택하세요:",
+                ["📊 캔들스틱 차트 (봉차트)", "📈 종가 선 차트 (Line)", "🌊 영역 차트 (Area)"],
+                horizontal=True
+            )
+            
+            df = chart_data['df']
+            fig = go.Figure()
+            
+            if "캔들스틱" in chart_type:
+                # 캔들 차트 (한국식 빨간색/파란색 설정)
+                fig.add_trace(go.Candlestick(
+                    x=df.index,
+                    open=df['Open'],
+                    high=df['High'],
+                    low=df['Low'],
+                    close=df['Close'],
+                    name="주가 (OHLC)",
+                    increasing_line_color='red',
+                    decreasing_line_color='blue'
+                ))
+            elif "선 차트" in chart_type:
+                # 선 차트
+                fig.add_trace(go.Scatter(
+                    x=df.index, y=df['Close'],
+                    mode='lines', name="종가",
+                    line=dict(color='#1f77b4', width=2)
+                ))
+            elif "영역 차트" in chart_type:
+                # 영역 차트
+                fig.add_trace(go.Scatter(
+                    x=df.index, y=df['Close'],
+                    mode='lines', fill='tozeroy', name="종가 영역",
+                    line=dict(color='#00CC96')
+                ))
+            
+            # 20일 이동평균선 추가 (공통)
+            fig.add_trace(go.Scatter(
+                x=df.index, y=df['MA20'],
+                mode='lines', name="20일 이동평균선",
+                line=dict(color='orange', width=1.5, dash='dash')
+            ))
+            
+            fig.update_layout(
+                margin=dict(l=20, r=20, t=20, b=20),
+                xaxis_rangeslider_visible=False,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
             
         # 뉴스 및 손절 라인 안내
         with st.expander("📰 분석에 반영된 최근 뉴스 보기", expanded=True):
