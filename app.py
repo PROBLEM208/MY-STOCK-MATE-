@@ -5,8 +5,9 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import urllib.parse
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
-# 1. 페이지 기본 설정 (layout="wide"로 넓게 변경)
+# 1. 페이지 기본 설정 (와이드 레이아웃 적용)
 st.set_page_config(
     page_title="MY STOCK MATE (MSM)",
     page_icon="📈",
@@ -91,24 +92,29 @@ def fetch_news_score(stock_name):
     except Exception:
         return [{"title": "뉴스 데이터를 불러오는 중 오류가 발생했습니다.", "link": "#"}], 0
 
-# --- 거래량 분석 및 차트 데이터 계산 ---
+# --- 차트용 데이터 계산 함수 (1년치 수집) ---
 def fetch_chart_data(ticker_symbol):
     """yfinance를 통한 차트 지표 및 거래량 계산"""
     try:
         ticker_obj = yf.Ticker(ticker_symbol)
-        df = ticker_obj.history(period="6mo")
+        df = ticker_obj.history(period="1y")
         
         if df.empty:
             return None
         
+        # 이동평균선
+        df['MA5'] = df['Close'].rolling(window=5).mean()
         df['MA20'] = df['Close'].rolling(window=20).mean()
+        df['MA60'] = df['Close'].rolling(window=60).mean()
         
+        # RSI
         delta = df['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['RSI'] = 100 - (100 / (1 + rs))
         
+        # 거래량 이동평균
         df['Vol_MA5'] = df['Volume'].rolling(window=5).mean()
         latest = df.iloc[-1]
         
@@ -218,41 +224,90 @@ if st.session_state.get("analyzed", False):
     else:
         st.warning("➡️ **[종합 시그널: 중립]** 방향성을 탐색 중인 구간입니다.")
         
-    st.markdown("### 📈 주가 차트 설정")
+    st.markdown("### 📈 XM 스타일 프로 트레이딩 차트")
     show_chart = st.toggle("차트 화면 표시하기", value=True)
     
     if show_chart:
-        chart_type = st.radio(
-            "차트 유형 선택:",
-            ["📊 캔들스틱 (봉차트)", "📈 종가 선 차트", "🌊 영역 차트"],
-            horizontal=True,
-            key="selected_chart_type"
-        )
-        
         df = chart_data['df']
-        fig = go.Figure()
         
-        if "캔들스틱" in chart_type:
-            fig.add_trace(go.Candlestick(
-                x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
-                name="주가", increasing_line_color='red', decreasing_line_color='blue'
-            ))
-        elif "선 차트" in chart_type:
-            fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', name="종가", line=dict(color='#1f77b4', width=2)))
-        elif "영역 차트" in chart_type:
-            fig.add_trace(go.Scatter(x=df.index, y=df['Close'], mode='lines', fill='tozeroy', name="종가 영역", line=dict(color='#00CC96')))
-        
-        fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], mode='lines', name="20일선", line=dict(color='orange', width=1.5, dash='dash')))
-        
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=10, b=10),
-            height=380,
-            dragmode=False,
-            xaxis_rangeslider_visible=False,
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        # 2단 서브플롯 생성 (1단: 캔들+이동평균선+거래량 / 2단: RSI 보조지표)
+        fig = make_subplots(
+            rows=2, cols=1, 
+            shared_xaxes=True, 
+            vertical_spacing=0.03, 
+            row_heights=[0.75, 0.25],
+            specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
         )
         
-        st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
+        # 1. 메인 캔들스틱 차트 (양봉: 빨강 / 음봉: 파랑)
+        fig.add_trace(go.Candlestick(
+            x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
+            name="OHLC", increasing_line_color='#FF3B30', decreasing_line_color='#007AFF'
+        ), row=1, col=1, secondary_y=False)
+        
+        # 이동평균선 오버레이 (5일선, 20일선, 60일선)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA5'], mode='lines', name="5일선", line=dict(color='#FFCC00', width=1)), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA20'], mode='lines', name="20일선", line=dict(color='#FF9500', width=1.5)), row=1, col=1, secondary_y=False)
+        fig.add_trace(go.Scatter(x=df.index, y=df['MA60'], mode='lines', name="60일선", line=dict(color='#AF52DE', width=1.5)), row=1, col=1, secondary_y=False)
+        
+        # 거래량 바 차트 (우측 Y축 활용)
+        colors = ['#FF3B30' if c >= o else '#007AFF' for c, o in zip(df['Close'], df['Open'])]
+        fig.add_trace(go.Bar(
+            x=df.index, y=df['Volume'], name="거래량", marker_color=colors, opacity=0.3
+        ), row=1, col=1, secondary_y=True)
+        
+        # 2. 보조지표 패널: RSI
+        fig.add_trace(go.Scatter(
+            x=df.index, y=df['RSI'], mode='lines', name="RSI", line=dict(color='#34C759', width=1.5)
+        ), row=2, col=1)
+        
+        # RSI 70/30 과열/과매도 가이드라인
+        fig.add_hline(y=70, line_dash="dash", line_color="#FF3B30", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="#007AFF", row=2, col=1)
+        
+        # XM 스타일 다크 테마 및 기간 선택(Range Selector) / 확대축소 설정
+        fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="#131722",
+            plot_bgcolor="#131722",
+            height=550,
+            margin=dict(l=10, r=10, t=30, b=10),
+            dragmode="pan",  # 마우스/손가락 드래그로 자유롭게 이동
+            legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1)
+        )
+        
+        # 기간 선택 퀵 버튼 및 하단 슬라이더 추가
+        fig.update_xaxes(
+            rangeslider_visible=True,
+            rangeslider_thickness=0.08,
+            rangeselector=dict(
+                buttons=list([
+                    dict(count=1, label="1개월", step="month", stepmode="backward"),
+                    dict(count=3, label="3개월", step="month", stepmode="backward"),
+                    dict(count=6, label="6개월", step="month", stepmode="backward"),
+                    dict(count=1, label="1년", step="year", stepmode="backward"),
+                    dict(label="전체", step="all")
+                ]),
+                font=dict(color="#FFFFFF"),
+                bgcolor="#2A2E39",
+                activecolor="#2962FF"
+            ),
+            row=2, col=1
+        )
+        
+        # 거래량 Y축 레이아웃 숨김 처리 (캔들 차트와 중첩 방지)
+        fig.update_yaxes(showgrid=False, secondary_y=True, row=1, col=1)
+        
+        # 차트 출력 (휠 스크롤 줌 및 모바일 제스처 확대를 허용)
+        st.plotly_chart(
+            fig, 
+            use_container_width=True, 
+            config={
+                'scrollZoom': True,          # 마우스 휠 및 두 손가락으로 확대/축소 가능
+                'displayModeBar': True,       # 우측 상단 상호작용 툴바 표시
+                'modeBarButtonsToRemove': []
+            }
+        )
         
     with st.expander("📰 분석에 반영된 최근 뉴스 보기 (클릭 시 기사로 이동)", expanded=True):
         for i, item in enumerate(news_list, 1):
