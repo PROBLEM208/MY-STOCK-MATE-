@@ -89,7 +89,7 @@ with col2:
 
 st.markdown("---")
 
-# 세션 상태 초기화 (옵션 변경시 분석 데이터가 사라지지 않도록 유지)
+# 세션 상태 초기화
 if "analyzed" not in st.session_state:
     st.session_state.analyzed = False
 
@@ -110,7 +110,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
             st.session_state.stock_name = stock_name
             st.session_state.ticker = ticker
 
-# 분석 결과 출력 (세션 상태에 저장된 데이터가 있을 경우)
+# 분석 결과 출력
 if st.session_state.get("analyzed", False):
     chart_data = st.session_state.chart_data
     news_titles = st.session_state.news_titles
@@ -124,7 +124,6 @@ if st.session_state.get("analyzed", False):
     ma20 = chart_data['ma20']
     rsi = chart_data['rsi']
     
-    # 뉴스 점수 텍스트 변환
     if news_score > 0:
         news_text = f"긍정 우세 (+{news_score:.1f})"
         news_delta = "호재 기사 우세"
@@ -135,7 +134,6 @@ if st.session_state.get("analyzed", False):
         news_text = "중립 (0.0)"
         news_delta = "특이 기사 없음"
         
-    # 메트릭 카드 배치
     m1, m2, m3 = st.columns(3)
     
     is_kor = curr_ticker.endswith(".KS") or curr_ticker.endswith(".KQ")
@@ -147,7 +145,6 @@ if st.session_state.get("analyzed", False):
     
     st.markdown("---")
     
-    # 시그널 판정
     if news_score > 0 and price > ma20 and rsi < 70:
         st.success("🔥 **[종합 시그널: 강력 관심]** 뉴스 호재와 함께 주가가 20일선 위에 안착했으며, 과열되지 않은 적정 매수 구간입니다.")
     elif rsi >= 70:
@@ -157,10 +154,8 @@ if st.session_state.get("analyzed", False):
     else:
         st.warning("➡️ **[종합 시그널: 중립]** 명확한 방향성이 나타날 때까지 관찰이 필요한 구간입니다.")
         
-    # 6. 차트 ON/OFF 토글 및 유형 선택 기능
     st.markdown("### 📈 주가 차트 설정")
     
-    # 차트 켜기/끄기 토글 스위치 (기본값: 켜짐)
     show_chart = st.toggle("차트 화면 표시하기", value=True)
     
     if show_chart:
@@ -175,7 +170,6 @@ if st.session_state.get("analyzed", False):
         fig = go.Figure()
         
         if "캔들스틱" in chart_type:
-            # 캔들 차트 (한국식 빨간색/파란색 설정)
             fig.add_trace(go.Candlestick(
                 x=df.index,
                 open=df['Open'],
@@ -187,36 +181,40 @@ if st.session_state.get("analyzed", False):
                 decreasing_line_color='blue'
             ))
         elif "선 차트" in chart_type:
-            # 선 차트
             fig.add_trace(go.Scatter(
                 x=df.index, y=df['Close'],
                 mode='lines', name="종가",
                 line=dict(color='#1f77b4', width=2)
             ))
         elif "영역 차트" in chart_type:
-            # 영역 차트
             fig.add_trace(go.Scatter(
                 x=df.index, y=df['Close'],
                 mode='lines', fill='tozeroy', name="종가 영역",
                 line=dict(color='#00CC96')
             ))
         
-        # 20일 이동평균선 추가
         fig.add_trace(go.Scatter(
             x=df.index, y=df['MA20'],
             mode='lines', name="20일 이동평균선",
             line=dict(color='orange', width=1.5, dash='dash')
         ))
         
+        # 차트 드래그 모드를 고정/터치 스크롤하기 편하게 개선
         fig.update_layout(
-            margin=dict(l=20, r=20, t=20, b=20),
+            margin=dict(l=10, r=10, t=10, b=10),
+            height=380,  # 차트 높이를 적절히 조절해 스크롤할 수 있는 빈 공간 확보
+            dragmode=False,  # 기본 드래그 작동 방지 (화면 스크롤이 매끄러워짐)
             xaxis_rangeslider_visible=False,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
         
-        st.plotly_chart(fig, use_container_width=True)
+        # Plotly 설정: 스크롤 및 모바일 터치 조작 단순화
+        st.plotly_chart(
+            fig, 
+            use_container_width=True,
+            config={'scrollZoom': False, 'displayModeBar': False}
+        )
         
-    # 뉴스 및 손절 라인 안내
     with st.expander("📰 분석에 반영된 최근 뉴스 보기", expanded=True):
         for i, t in enumerate(news_titles, 1):
             st.write(f"{i}. {t}")
