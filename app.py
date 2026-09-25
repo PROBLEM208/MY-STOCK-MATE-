@@ -52,9 +52,9 @@ def search_ticker(query):
         
     return None
 
-# --- 뉴스 수집 및 감성 분석 ---
+# --- 뉴스 수집 및 감성 분석 (링크 포함) ---
 def fetch_news_score(stock_name):
-    """구글 뉴스 RSS 피드를 이용한 최신 뉴스 분석"""
+    """구글 뉴스 RSS 피드를 이용한 최신 뉴스 및 링크 가져오기"""
     try:
         encoded_query = urllib.parse.quote(f"{stock_name} 주식")
         url = f"https://news.google.com/rss/search?q={encoded_query}&hl=ko&gl=KR&ceid=KR:ko"
@@ -64,10 +64,18 @@ def fetch_news_score(stock_name):
         soup = BeautifulSoup(response.text, 'xml')
         
         items = soup.find_all('item')
-        titles = [item.title.text for item in items[:5] if item.title]
         
-        if not titles:
-            return ["최근 관련 뉴스를 찾을 수 없습니다."], 0
+        news_list = []
+        titles = []
+        for item in items[:5]:
+            title_text = item.title.text if item.title else ""
+            link_url = item.link.text if item.link else "#"
+            if title_text:
+                news_list.append({"title": title_text, "link": link_url})
+                titles.append(title_text)
+        
+        if not news_list:
+            return [{"title": "최근 관련 뉴스를 찾을 수 없습니다.", "link": "#"}], 0
         
         pos_keywords = ['상승', '호재', '실적', '흑자', '수주', '돌파', '신고가', '매수', '급등', '목표가 상향']
         neg_keywords = ['하락', '악재', '적자', '급락', '위기', '손실', '우려', '매도', '목표가 하향']
@@ -81,9 +89,9 @@ def fetch_news_score(stock_name):
             for nk in neg_keywords:
                 if nk in title and not has_reverse: score -= 1.5
                 
-        return titles, score
+        return news_list, score
     except Exception:
-        return ["뉴스 데이터를 불러오는 중 오류가 발생했습니다."], 0
+        return [{"title": "뉴스 데이터를 불러오는 중 오류가 발생했습니다.", "link": "#"}], 0
 
 # --- 기능 3: 거래량 분석 및 차트 데이터 계산 ---
 def fetch_chart_data(ticker_symbol):
@@ -126,7 +134,7 @@ st.title("📈 MY STOCK MATE (MSM)")
 st.caption("내 손안의 스마트 AI 주식 분석 비서")
 st.divider()
 
-# 사용자 입력창 (기업 이름만 입력해도 가능)
+# 사용자 입력창
 stock_input = st.text_input("🏢 기업 이름 또는 종목 티커 입력", value="삼성전자", help="예: 삼성전자, 애플, AAPL, Tesla 등")
 
 st.markdown("---")
@@ -144,7 +152,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
             found_ticker = stock_input.strip().upper()
             
         chart_data = fetch_chart_data(found_ticker)
-        news_titles, news_score = fetch_news_score(stock_input.strip())
+        news_list, news_score = fetch_news_score(stock_input.strip())
         
         if chart_data is None:
             st.session_state.analyzed = False
@@ -152,7 +160,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
         else:
             st.session_state.analyzed = True
             st.session_state.chart_data = chart_data
-            st.session_state.news_titles = news_titles
+            st.session_state.news_list = news_list
             st.session_state.news_score = news_score
             st.session_state.stock_name = stock_input
             st.session_state.ticker = found_ticker
@@ -160,7 +168,7 @@ if st.button("📊 MSM 정밀 분석 시작하기", use_container_width=True):
 # 분석 결과 출력
 if st.session_state.get("analyzed", False):
     chart_data = st.session_state.chart_data
-    news_titles = st.session_state.news_titles
+    news_list = st.session_state.news_list
     news_score = st.session_state.news_score
     curr_stock_name = st.session_state.stock_name
     curr_ticker = st.session_state.ticker
@@ -204,7 +212,6 @@ if st.session_state.get("analyzed", False):
     else:
         vol_status = "➡️ 평이한 수준"
 
-    # 메트릭 카드를 4개로 배치 (거래량 지표 추가)
     m1, m2, m3, m4 = st.columns(4)
     m1.metric("현재가", price_display, ma20_display)
     m2.metric("뉴스 분위기", news_text, news_delta)
@@ -213,7 +220,7 @@ if st.session_state.get("analyzed", False):
     
     st.markdown("---")
     
-    # 시그널 판정 (거래량 급증 조건 추가 반영)
+    # 시그널 판정
     if news_score > 0 and price > ma20 and rsi < 70 and vol_ratio >= 130:
         st.success("🔥 **[종합 시그널: 강력 매수 관점]** 호재 뉴스, 20일선 수복, 거래량 급증이 동시 발생하여 상승 동력이 매우 강합니다!")
     elif news_score > 0 and price > ma20 and rsi < 70:
@@ -262,11 +269,14 @@ if st.session_state.get("analyzed", False):
         
         st.plotly_chart(fig, use_container_width=True, config={'scrollZoom': False, 'displayModeBar': False})
         
-    # 뉴스 및 손절 라인 안내
-    with st.expander("📰 분석에 반영된 최근 뉴스 보기", expanded=True):
-        for i, t in enumerate(news_titles, 1):
-            st.write(f"{i}. {t}")
-            
+    # 뉴스 클릭 링크 적용 부분
+    with st.expander("📰 분석에 반영된 최근 뉴스 보기 (클릭 시 기사로 이동)", expanded=True):
+        for i, item in enumerate(news_list, 1):
+            if item['link'] != "#":
+                st.markdown(f"{i}. [{item['title']}]({item['link']})")
+            else:
+                st.write(f"{i}. {item['title']}")
+                
     stop_loss = ma20 * 0.97
     if is_kor:
         stop_loss_str = f"{stop_loss:,.0f}원"
